@@ -518,7 +518,7 @@ void Erode(const cv::Mat &src, cv::Mat &erode_dst, int size )
 /*
  * rect是相对640*480图片的坐标
  * */
-static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv::Mat &bitmap, double low_threshold,\
+static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv::Mat &bitmap, bool do_bitwise_and, double low_threshold,\
  double high_threshold, const std::vector<cv::Point> &rect)
 {
     int s32Ret = 0;
@@ -548,7 +548,12 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
 //    std::cout << before_filter.cols << " " << before_filter.rows << std::endl;
 //    std::cout << bitmap.cols << " " << bitmap.rows << std::endl;
 //    cv::imshow("bitmat", bitmap);
-    cv::bitwise_and(before_filter, bitmap, binaryContour);
+	if (do_bitwise_and) {
+		cv::bitwise_and(before_filter, bitmap, binaryContour);
+	}
+	else {
+		binaryContour = before_filter;
+	}
 //    cv::imshow("binary", binaryContour);
 //    cv::waitKey(0);
 
@@ -746,6 +751,9 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 
     UINT8 sensitity_threshold_low, sensitity_threshold_high;
 
+	sensitity_threshold_low = 10;
+	sensitity_threshold_high = 80;
+#if 0
     if (koyo_tool_contour_parameter->sensitivity == CONTOUR_ACCURACY_LOW) {
         sensitity_threshold_low = CANNY_ACCLOW_THRLOW;
         sensitity_threshold_high = CANNY_ACCLOW_THRHIGH;
@@ -756,6 +764,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
         sensitity_threshold_low = CANNY_ACCHIGH_THRLOW;
         sensitity_threshold_high = CANNY_ACCHIGH_THRHIGH;
     }
+#endif
 
 
     // 建立各层金字塔, 并确定最佳金字塔层数
@@ -846,9 +855,15 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
             // todo 客户端下发的bitmap也要旋转
             auto rotate_bitmap = rotate_image(pyramid_bitmaps[i], rotated_image_bmap, centers[i], j);
             auto rotate_matrix = rotate_image(pyramid_templates[i], rotated_image, centers[i], j);
+
             rotate_rect(rect, rotate_matrix);
-            // todo 多传一个参数，旋转后的bitmap
-            do_create_template(tpl, rotated_image, rotated_image_bmap, sensitity_threshold_low, sensitity_threshold_high, rect);
+            // todo 多传一个参数，旋转后的bitmap, 以及dobitwise_and的flag，只在高分辨率上做bitwiseand
+			if (i <= 1) {
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 1,  sensitity_threshold_low, sensitity_threshold_high, rect);
+			} else {
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 0, sensitity_threshold_low, sensitity_threshold_high, rect);
+			}
+			std::cout << "level: " << i << " num: " << tpl.noOfCordinates << std::endl;
             cur_level_tpl.push_back(tpl);
 //            draw_template(rotated_image, tpl);
 //            cv::imshow(std::string("pyr") + std::string(1, i - '0'), rotated_image);
@@ -1062,7 +1077,7 @@ int get_contours(const UINT8 *yuv, UINT8 *contours[3])
 {
 
     auto src = get_y_from_yuv(yuv, WIDTH, HEIGHT);
-    //cv::GaussianBlur(src, src, cv::Size(5,5),0);
+    cv::GaussianBlur(src, src, cv::Size(3,3),0);
     cv::Mat contour_low, contour_medium, contour_high;
     cv::Canny(src, contour_low, CANNY_ACCLOW_THRLOW, CANNY_ACCLOW_THRHIGH);
     cv::Canny(src, contour_medium, CANNY_ACCMEDIUM_THRLOW, CANNY_ACCMEDIUM_THRHIGH);

@@ -11,12 +11,12 @@ using UINT16 = unsigned short;
 using INT8 = signed char;
 using UINT8 = unsigned char;
 using UINT32 = unsigned int;
-const int MIN_CONTOUR_PYRA = 120;
+const int MIN_CONTOUR_PYRA = 50;
 const int WIDTH = 640;
 const int HEIGHT = 480;
 
 const int MAX_NUM_PYRAMID = 5;
-const int MIN_NUM_PYRAMID = 3;
+const int MIN_NUM_PYRAMID = 4;
 const int MIN_DIST = 2;
 #define DEBUG_PRINT
 #define NDEBUG
@@ -28,10 +28,10 @@ const int MIN_DIST = 2;
 #define CANNY_ACCLOW_THRLOW         10
 #define CANNY_ACCLOW_THRHIGH        100
 
-#define CANNY_ACCMEDIUM_THRLOW      50
+#define CANNY_ACCMEDIUM_THRLOW      10
 #define CANNY_ACCMEDIUM_THRHIGH     150
 
-#define CANNY_ACCHIGH_THRLOW        80
+#define CANNY_ACCHIGH_THRLOW        10
 #define CANNY_ACCHIGH_THRHIGH       220
 
 typedef struct TemplateMatch
