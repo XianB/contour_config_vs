@@ -817,6 +817,9 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 
         // 确定角度步长, 使用Canny的轮廓图来计算最远点
         auto step = get_angle_step_and_search_width(cannyResult, center, search_rect_width);
+		if (optimal_pyr_level == 0 || optimal_pyr_level == 1) {
+			step = 1.0;
+		}
         angle_steps.push_back(step);
 
         std::cout << "num of coordinate this level: " << num_of_contour << std::endl;

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -83,8 +83,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>G:\opencv_msvc\opencv\build\include\opencv2;G:\opencv_msvc\opencv\build\include\opencv;G:\opencv_msvc\opencv\build\include;$(IncludePath)</IncludePath>
-    <LibraryPath>G:\opencv_msvc\opencv\build\x64\vc14\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\Tools\opencv\build\include;D:\Tools\opencv\build\include\opencv;D:\Tools\opencv\build\include\opencv2;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\Tools\opencv\build\x64\vc14\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
