@@ -329,6 +329,15 @@ static std::ostream &print_tpl(std::ostream &os, const TemplateStruct &templateS
     std::cout << "Number of coordinate: " << templateStruct.noOfCordinates << std::endl;
     std::cout << "center of gravity: " << templateStruct.centerOfGravity << std::endl;
 }
+
+void print_tpl(const TemplateStruct &tpl) {
+	cv::Mat tmp(tpl.modelHeight, tpl.modelWidth, CV_8UC1, cv::Scalar(0));
+	for(int i = 0; i < tpl.noOfCordinates; ++i){
+		tmp.at<uchar>(tpl.cordinates[i].y + tpl.centerOfGravity.y, tpl.cordinates[i].x + tpl.centerOfGravity.x) = 255;
+	}
+	cv::imshow("tmp", tmp);
+	cv::waitKey(0);
+}
 static std::ostream &print_tpls(std::ostream &os, const Koyo_Contour_Template_Runtime_Param & rhl)
 {
     os << "runtime npyramid: " << static_cast<int>(rhl.run_time_npyramid) << std::endl;
@@ -367,7 +376,7 @@ static std::vector<float> rotate_image(const cv::Mat &src, cv::Mat &dst, cv::Poi
     // 这里不能改
     map[2] += (width_rotate - width) / 2.0;
     map[5] += (height_rotate - height) / 2.0;
-    cv::warpAffine(src, dst, map_matrix, cv::Size(width_rotate, height_rotate), 1, 0, 0);
+    cv::warpAffine(src, dst, map_matrix, cv::Size(width_rotate, height_rotate));
     std::vector<float> rotate_matrix;
     rotate_matrix.push_back(map[0]);
     rotate_matrix.push_back(map[1]);
@@ -519,7 +528,7 @@ void Erode(const cv::Mat &src, cv::Mat &erode_dst, int size )
  * rect是相对640*480图片的坐标
  * */
 static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv::Mat &bitmap, bool do_bitwise_and, double low_threshold,\
- double high_threshold, const std::vector<cv::Point> &rect)
+ double high_threshold, const cv::Mat &rmWhite)
 {
     int s32Ret = 0;
     cv::Mat gx;                //Matrix to store X derivative
@@ -539,7 +548,8 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
     cv::Mat binaryContour, before_filter;
     cv::Canny(src, before_filter, low_threshold, high_threshold);
     //canny的结果和bitmap相与
-//    cv::imshow("before", before_filter);
+ //   cv::imshow("before", before_filter);
+	//cv::waitKey(0);
     // 把bitmap膨胀一下
     cv::Mat dialBitmap;
     Dilation(bitmap, dialBitmap, 3);
@@ -547,15 +557,18 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
 
 //    std::cout << before_filter.cols << " " << before_filter.rows << std::endl;
 //    std::cout << bitmap.cols << " " << bitmap.rows << std::endl;
-//    cv::imshow("bitmat", bitmap);
+    //cv::imshow("bitmat", bitmap);
+	//cv::waitKey(0);
 	if (do_bitwise_and) {
+		cv::bitwise_and(before_filter, rmWhite, before_filter);
 		cv::bitwise_and(before_filter, bitmap, binaryContour);
 	}
 	else {
+		cv::bitwise_and(before_filter, rmWhite, before_filter);
 		binaryContour = before_filter;
 	}
-//    cv::imshow("binary", binaryContour);
-//    cv::waitKey(0);
+    //cv::imshow("binary", binaryContour);
+    //cv::waitKey(0);
 
     int RSum = 0, CSum = 0;
 
@@ -569,10 +582,9 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
             p.y = i;
             // todo 这里由于使用了位与操作，所以不用再判断距离了
             // 最小距离是多少还需要斟酌，因为在最小分辨率情况下看到边框还是没有去除掉，在最小分辨情况下这个dist太小了。
-            double min_dist = (tpl.modelHeight + tpl.modelWidth) / 100.0;
-            min_dist = (min_dist > MIN_DIST ? min_dist : MIN_DIST);
+            double min_dist = MIN_DIST;
             // todo 这里由于使用了位与操作，所以不用再判断距离了
-            if (U8 && dist_to_lines_less_than(rect, p, min_dist)) {
+            if (U8) {
                 /* 如果梯度都为零，那么不需要计算，因为分数不会有贡献 */
                 if (fdx != 0 || fdy != 0) {
                     /* 坐标变换到外接矩形左上角为(0, 0) */
@@ -807,8 +819,8 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 #endif
         cv::Mat cannyResult;
         cv::Canny(pyr, cannyResult, sensitity_threshold_high, sensitity_threshold_low);
-//        cv::imshow("hahahaha", cannyResult);
-//        cv::waitKey(0);
+        //cv::imshow("hahahaha", cannyResult);
+        //cv::waitKey(0);
         std::cout << "2 rows: " << pyr.rows << " cols: " << pyr.cols << std::endl;
         cv::Point center;
         unsigned int num_of_contour = 0;
@@ -824,7 +836,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 
         std::cout << "num of coordinate this level: " << num_of_contour << std::endl;
 
-        if ((num_of_contour < MIN_CONTOUR_PYRA && optimal_pyr_level >= MIN_NUM_PYRAMID) || optimal_pyr_level >= MAX_NUM_PYRAMID) {
+        if (optimal_pyr_level >= MAX_NUM_PYRAMID || (num_of_contour < MIN_CONTOUR_PYRA && optimal_pyr_level >= MIN_NUM_PYRAMID)) {
             break;
         }
         ++optimal_pyr_level;
@@ -854,23 +866,38 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
             auto rect = cur_rect;
             cv::Mat rotated_image;
             cv::Mat rotated_image_bmap;
+
+			// 在这里做与的操作，便于之后不再进行去除白边的繁琐操作，因此需要进行下列的操作
+			cv::Mat rmWhite_image_canny;
+			cv::Mat rotated_rmWhite_image(pyramid_templates[i].rows, pyramid_templates[i].cols, CV_8UC1);
+			cv::Canny(pyramid_templates[i], rmWhite_image_canny, sensitity_threshold_low, sensitity_threshold_high);
+
             // 还是无法保证完全在图片框内
             // todo 客户端下发的bitmap也要旋转
             auto rotate_bitmap = rotate_image(pyramid_bitmaps[i], rotated_image_bmap, centers[i], j);
             auto rotate_matrix = rotate_image(pyramid_templates[i], rotated_image, centers[i], j);
+			rotate_image(rmWhite_image_canny, rotated_rmWhite_image, centers[i], j);
+			cv::threshold(rotated_rmWhite_image, rotated_rmWhite_image, 10, 255, CV_THRESH_BINARY);
+			Dilation(rotated_rmWhite_image, rotated_rmWhite_image, 3);
+
+			/*cv::imshow("rmWhite_image_canny", rotated_rmWhite_image);
+			cv::waitKey(0);*/
 
             rotate_rect(rect, rotate_matrix);
             // todo 多传一个参数，旋转后的bitmap, 以及dobitwise_and的flag，只在高分辨率上做bitwiseand
 			if (i <= 1) {
-				do_create_template(tpl, rotated_image, rotated_image_bmap, 1,  sensitity_threshold_low, sensitity_threshold_high, rect);
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 1,  sensitity_threshold_low, sensitity_threshold_high, rotated_rmWhite_image);
 			} else {
-				do_create_template(tpl, rotated_image, rotated_image_bmap, 0, sensitity_threshold_low, sensitity_threshold_high, rect);
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 0, sensitity_threshold_low, sensitity_threshold_high, rotated_rmWhite_image);
 			}
 			std::cout << "level: " << i << " num: " << tpl.noOfCordinates << std::endl;
+
+			// 打印tpl图片信息
+			print_tpl(tpl);
             cur_level_tpl.push_back(tpl);
 //            draw_template(rotated_image, tpl);
-//            cv::imshow(std::string("pyr") + std::string(1, i - '0'), rotated_image);
-//            cvWaitKey(0);
+            //cv::imshow(std::string("pyr") + std::string(1, i - '0'), rotated_image);
+            //cvWaitKey(0);
         }
         tpls.push_back(cur_level_tpl);
     }
@@ -1039,8 +1066,8 @@ int create_template(const UINT8 *yuv, Koyo_Tool_Contour_Parameter *koyo_tool_con
     // 从bitmap中恢复被擦除的位图
     bitmap2Mat(bitmapCleaned, bitmapCleaned, koyo_tool_contour_parameter->bitmaps,
                koyo_tool_contour_parameter->ext_rect_width, koyo_tool_contour_parameter->ext_rect_height);
-//    cv::imshow("haha", bitmapCleaned);
-//    cv::waitKey(0);
+    //cv::imshow("haha", bitmapCleaned);
+    //cv::waitKey(0);
     // 从外接矩形位图中获取模板部分的位图
     template_roi = template_image(cv::Rect(koyo_tool_contour_parameter->ext_rect_x, koyo_tool_contour_parameter->ext_rect_y, koyo_tool_contour_parameter->ext_rect_width, koyo_tool_contour_parameter->ext_rect_height));
     // 保证两次截取出来的图大小一样

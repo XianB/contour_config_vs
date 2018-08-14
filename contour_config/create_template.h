@@ -17,7 +17,7 @@ const int HEIGHT = 480;
 
 const int MAX_NUM_PYRAMID = 5;
 const int MIN_NUM_PYRAMID = 4;
-const int MIN_DIST = 2;
+const double MIN_DIST = 0.0;
 #define DEBUG_PRINT
 #define NDEBUG
 
