@@ -173,6 +173,10 @@ typedef struct KOYO_TOOL_CONTOUR_PARAMETER_
     UINT16 search_rect_width;    //搜索区域宽度
     UINT16 search_rect_height;   //搜索区域高度
 
+	// 轮廓工具动态显示上下阈值
+	UINT8 sensitivity_Top_Threshold;
+	UINT8 sensitivity_Low_Threshold;
+
     UINT8  sensitivity;          //搜索灵敏度
     UINT8  algo_strategy;
     UINT16 angle_range;          //搜索角度范围

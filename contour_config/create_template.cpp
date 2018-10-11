@@ -376,7 +376,7 @@ static std::vector<float> rotate_image(const cv::Mat &src, cv::Mat &dst, cv::Poi
     // 这里不能改
     map[2] += (width_rotate - width) / 2.0;
     map[5] += (height_rotate - height) / 2.0;
-    cv::warpAffine(src, dst, map_matrix, cv::Size(width_rotate, height_rotate));
+    cv::warpAffine(src, dst, map_matrix, cv::Size(width_rotate, height_rotate), CV_INTER_NN);
     std::vector<float> rotate_matrix;
     rotate_matrix.push_back(map[0]);
     rotate_matrix.push_back(map[1]);
@@ -455,7 +455,7 @@ static int cutout_template_image(const cv::Mat &template_image, std::vector<cv::
 /*
  *  输入图像是二值化图像
  * */
-static int get_center_numof_contour(const cv::Mat src, cv::Point &center, unsigned int &numofcontour)
+static int get_center_numof_contour(const cv::Mat src, cv::Point &center, unsigned int &numofcontour, int height, int width)
 {
     double m00, m10, m01;
     auto moments = cv::moments(src, true);
@@ -465,8 +465,11 @@ static int get_center_numof_contour(const cv::Mat src, cv::Point &center, unsign
     if (m00 == 0) {
         return -1;
     } else {
-        center.x = static_cast<int>(m10/m00);
-        center.y = static_cast<int>(m01/m00);
+		// 求旋转角度步长的中心应该选为模板的中心，而不是质心
+		center.x = width / 2;
+		center.y = height / 2;
+        //center.x = static_cast<int>(m10/m00);
+        //center.y = static_cast<int>(m01/m00);
     }
     numofcontour = m00;
     return 0;
@@ -520,15 +523,38 @@ void Erode(const cv::Mat &src, cv::Mat &erode_dst, int size )
 
     cv::Mat element = cv::getStructuringElement( dilation_type,
                                          cv::Size( size, size));
-    ///膨胀操作
+    ///腐蚀操作
     erode( src, erode_dst, element);
+}
+
+// 为了保证最顶层的点数足够多，将二层图像先膨胀后再向上求最顶层的二值图
+void get_topLevel_binaryPic_by_dilationLevel(const TemplateStruct &tpl, cv::Mat &ret_mat, int height, int width) {
+	cv::Mat tmp(tpl.modelHeight, tpl.modelWidth, CV_8UC1, cv::Scalar(0));
+	cv::Mat tmp_sameSize(height, width, CV_8UC1, cv::Scalar(0));
+	for (int i = 0; i < tpl.noOfCordinates; ++i) {
+		tmp.at<uchar>(tpl.cordinates[i].y + tpl.centerOfGravity.y, tpl.cordinates[i].x + tpl.centerOfGravity.x) = 255;
+	}
+	// 膨胀
+	cv::Mat tmp_dilation, tmp_notSize;
+	Dilation(tmp, tmp_dilation, 2);
+
+	// downSample 只取偶数行列
+	for (int i = 0; i < tmp_sameSize.rows; ++i) {
+		for (int j = 0; j < tmp_sameSize.cols; ++j) {
+			if (2 * i < tmp_dilation.rows && 2 * j < tmp_dilation.cols && tmp_dilation.at<uchar>(2*i, 2*j) == 255) {
+				tmp_sameSize.at<uchar>(i, j) = 255;
+			}
+		}
+	}
+
+	ret_mat = tmp_sameSize.clone();
 }
 
 /*
  * rect是相对640*480图片的坐标
  * */
 static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv::Mat &bitmap, bool do_bitwise_and, double low_threshold,\
- double high_threshold, const cv::Mat &rmWhite)
+ double high_threshold, const cv::Mat &rmWhite, int level, int max_level, const TemplateStruct &pre_tpl)
 {
     int s32Ret = 0;
     cv::Mat gx;                //Matrix to store X derivative
@@ -546,9 +572,17 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
 //    cv::Canny(src, binaryContour, low_threshold, high_threshold);
 
     cv::Mat binaryContour, before_filter;
-    cv::Canny(src, before_filter, low_threshold, high_threshold);
+	
+	// 在这里进行最顶层的膨胀操作（为了保留更多的点，所以二层先做膨胀操作，之后再向上建立二值化的顶层）
+	if (level == max_level - 1) { // 顶层
+		get_topLevel_binaryPic_by_dilationLevel(pre_tpl, before_filter, src.rows, src.cols);
+	}
+	else {
+		cv::Canny(src, before_filter, low_threshold, high_threshold);
+	}
+    
     //canny的结果和bitmap相与
- //   cv::imshow("before", before_filter);
+    //cv::imshow("before", before_filter);
 	//cv::waitKey(0);
     // 把bitmap膨胀一下
     cv::Mat dialBitmap;
@@ -564,7 +598,9 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
 		cv::bitwise_and(before_filter, bitmap, binaryContour);
 	}
 	else {
-		cv::bitwise_and(before_filter, rmWhite, before_filter);
+		if (level != max_level - 1) { // 顶层
+			cv::bitwise_and(before_filter, rmWhite, before_filter);
+		}
 		binaryContour = before_filter;
 	}
     //cv::imshow("binary", binaryContour);
@@ -577,6 +613,8 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
             short fdx = gx.at<short>(i,j);
             short fdy = gy.at<short>(i,j);
             unsigned char U8 = binaryContour.at<uchar>(i, j);
+			// 考虑到如果擦除点数太多，导致匹配过程中一级匹配出现问题，因此点数应该统计为未擦除前的
+			//unsigned char U8_before = before_filter.at<uchar>(i, j);
             cv::Point p;
             p.x = j;
             p.y = i;
@@ -601,9 +639,14 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
                     }
                     tpl.edgeDerivativeX.push_back(static_cast<float>(fdx / vector_length));
                     tpl.edgeDerivativeY.push_back(static_cast<float>(fdy / vector_length));
-                    tpl.noOfCordinates++;
+					tpl.noOfCordinates++;
                 }
             }
+			//if (U8_before) {
+			//	if (fdx != 0 || fdy != 0) {
+			//		tpl.noOfCordinates++;
+			//	}
+			//}
         }
     }
 
@@ -612,8 +655,10 @@ static int do_create_template(TemplateStruct &tpl, const cv::Mat &src, const cv:
         tpl.centerOfGravity.x = tpl.modelWidth / 2;
         tpl.centerOfGravity.y = tpl.modelHeight / 2;
     } else {
-        tpl.centerOfGravity.x = RSum / tpl.noOfCordinates;    // center of gravity
-        tpl.centerOfGravity.y = CSum / tpl.noOfCordinates;    // center of gravity
+		tpl.centerOfGravity.x = tpl.modelWidth / 2;
+		tpl.centerOfGravity.y = tpl.modelHeight / 2;
+        //tpl.centerOfGravity.x = RSum / tpl.noOfCordinates;    // center of gravity
+        //tpl.centerOfGravity.y = CSum / tpl.noOfCordinates;    // center of gravity
     }
 
     // change coordinates to reflect center of gravity
@@ -761,6 +806,9 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
     pyramid_templates.push_back(src);
     pyramid_bitmaps.push_back(bitMap);
 
+	//cv::imshow("bitMap", bitMap);
+	//cv::waitKey(0);
+
     UINT8 sensitity_threshold_low, sensitity_threshold_high;
 
 	sensitity_threshold_low = 10;
@@ -777,7 +825,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
         sensitity_threshold_high = CANNY_ACCHIGH_THRHIGH;
     }
 #endif
-
+	std::cout << "create_template begin" << std::endl;
 
     // 建立各层金字塔, 并确定最佳金字塔层数
     int optimal_pyr_level = 0;
@@ -791,6 +839,10 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
         cv::pyrDown(pyramid_templates[i], next_level);
         pyramid_templates.push_back(next_level);
         pyramid_bitmaps.push_back(next_level_bmap);
+		//cv::imshow("next_level", next_level);
+		//cv::waitKey(0);
+		//cv::imshow("next_level_bmap", next_level_bmap);
+		//cv::waitKey(0);
     }
 
 #if 0
@@ -813,6 +865,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
     for (auto iter = std::begin(pyramid_templates); iter != std::end(pyramid_templates); ++iter) {
         std::cout << "1 rows: " << iter->rows << " cols: " << iter->cols << std::endl;
     }
+	std::cout << "error1" << std::endl;
     for (auto &pyr : pyramid_templates) {
 #ifndef  NDEBUG
 //        saveMat(pyr, (std::string("data//") + std::to_string(pyr.rows) + std::to_string(pyr.cols)).c_str());
@@ -824,7 +877,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
         std::cout << "2 rows: " << pyr.rows << " cols: " << pyr.cols << std::endl;
         cv::Point center;
         unsigned int num_of_contour = 0;
-        get_center_numof_contour(cannyResult, center, num_of_contour);
+        get_center_numof_contour(cannyResult, center, num_of_contour, pyr.rows, pyr.cols);
         centers.push_back(center);
 
         // 确定角度步长, 使用Canny的轮廓图来计算最远点
@@ -845,7 +898,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
  //   tt1.stop();
 //    std::cout << "first half: " << tt1.duration() << std::endl;
 
-
+	std::cout << "error2" << std::endl;
     // 对每层每个角度建立模板
     // tpls中的内存是动态分配的, 在建立完模板后需要释放所有的内存
     // todo 重构成vector版本的
@@ -871,29 +924,42 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 			cv::Mat rmWhite_image_canny;
 			cv::Mat rotated_rmWhite_image(pyramid_templates[i].rows, pyramid_templates[i].cols, CV_8UC1);
 			cv::Canny(pyramid_templates[i], rmWhite_image_canny, sensitity_threshold_low, sensitity_threshold_high);
-
             // 还是无法保证完全在图片框内
             // todo 客户端下发的bitmap也要旋转
             auto rotate_bitmap = rotate_image(pyramid_bitmaps[i], rotated_image_bmap, centers[i], j);
             auto rotate_matrix = rotate_image(pyramid_templates[i], rotated_image, centers[i], j);
 			rotate_image(rmWhite_image_canny, rotated_rmWhite_image, centers[i], j);
 			cv::threshold(rotated_rmWhite_image, rotated_rmWhite_image, 10, 255, CV_THRESH_BINARY);
-			Dilation(rotated_rmWhite_image, rotated_rmWhite_image, 3);
+			//Dilation(rotated_rmWhite_image, rotated_rmWhite_image, 3);
 
-			/*cv::imshow("rmWhite_image_canny", rotated_rmWhite_image);
-			cv::waitKey(0);*/
+			//cv::imshow("rmWhite_image_canny", rotated_rmWhite_image);
+			//cv::waitKey(0);
 
-            rotate_rect(rect, rotate_matrix);
+            //rotate_rect(rect, rotate_matrix);
+
+			// 求一下该层当前角度对应下层角度的模板图(只针对顶层，一般情况下不考虑)
+			TemplateStruct pre_tpl;
+			if (i == optimal_pyr_level - 1) {
+				int angle_idx = (j + koyo_tool_contour_parameter->angle_range) / angle_steps[i - 1];
+				if (angle_idx > tpls[i - 1].size() - 1) {
+					angle_idx = tpls[i - 1].size() - 1;
+				}
+				pre_tpl = tpls[i - 1][angle_idx];
+			}
+			
+
             // todo 多传一个参数，旋转后的bitmap, 以及dobitwise_and的flag，只在高分辨率上做bitwiseand
 			if (i <= 1) {
-				do_create_template(tpl, rotated_image, rotated_image_bmap, 1,  sensitity_threshold_low, sensitity_threshold_high, rotated_rmWhite_image);
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 1,  sensitity_threshold_low, 
+					sensitity_threshold_high, rotated_rmWhite_image, i, optimal_pyr_level, pre_tpl);
 			} else {
-				do_create_template(tpl, rotated_image, rotated_image_bmap, 0, sensitity_threshold_low, sensitity_threshold_high, rotated_rmWhite_image);
+				do_create_template(tpl, rotated_image, rotated_image_bmap, 0, sensitity_threshold_low, 
+					sensitity_threshold_high, rotated_rmWhite_image, i, optimal_pyr_level, pre_tpl);
 			}
-			std::cout << "level: " << i << " num: " << tpl.noOfCordinates << std::endl;
+			//std::cout << "level: " << i << " num: " << tpl.noOfCordinates << std::endl;
 
 			// 打印tpl图片信息
-			print_tpl(tpl);
+			//print_tpl(tpl);
             cur_level_tpl.push_back(tpl);
 //            draw_template(rotated_image, tpl);
             //cv::imshow(std::string("pyr") + std::string(1, i - '0'), rotated_image);
@@ -903,7 +969,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
     }
  //   tt.stop();
   //  std::cout << tt.duration() << "ms" << std::endl;
-
+	std::cout << "create_template end" << std::endl;
 #ifndef NDEBUG
 //    for (auto iter = tpls.cbegin(); iter != tpls.end(); ++iter) {
 //        std::cout << iter->at(0).noOfCordinates << std::endl;
@@ -994,6 +1060,7 @@ int create_template(const UINT8 *yuv, Koyo_Tool_Contour_Parameter *koyo_tool_con
 //        out1<<(bool)koyo_tool_contour_parameter->bitmaps[i]<<endl;
 //    }
     // 获取灰度图
+	std::cout << "create_template" << std::endl;
     auto template_image = get_y_from_yuv(yuv, WIDTH, HEIGHT);
     //cv::GaussianBlur(template_image, template_image, cv::Size(5,5),0);
     /* TODO 考虑不要旋转了，直接像圆那样截取出来吧 */
@@ -1125,5 +1192,23 @@ int get_contours(const UINT8 *yuv, UINT8 *contours[3])
 //    cv::imwrite("data//medium.jpg", contour_medium);
 //    cv::imwrite("data//high.jpg", contour_high);
 #endif
+}
+
+
+int get_contours(const UINT8 *yuv, UINT8 *contours[3], int low_threshold, int high_threshold)
+{
+	int low = low_threshold;
+	int high = low_threshold * 3;
+	auto src = get_y_from_yuv(yuv, WIDTH, HEIGHT);
+	cv::GaussianBlur(src, src, cv::Size(3, 3), 0);
+	cv::Mat contour;
+	cv::Canny(src, contour, low, high);
+	for (int i = 0; i < HEIGHT; ++i) {
+		for (int j = 0; j < WIDTH; ++j) {
+			contours[0][i * WIDTH + j] = contour.at<uchar>(i, j);
+		}
+	}
+	return 0;
+
 }
 

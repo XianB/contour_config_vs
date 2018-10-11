@@ -132,6 +132,7 @@ typedef struct KOYO_POINT{
 //char *create_template(const UINT8 *yuv, Koyo_Tool_Contour_Parameter koyo_tool_contour_parameter);
 int create_template(const UINT8 *yuv, Koyo_Tool_Contour_Parameter *koyo_tool_contour_parameter, char *buf_start, int buf_free, int *buf_size);
 int get_contours(const UINT8 *yuv, UINT8 *contours[3]);
+int get_contours(const UINT8 *yuv, UINT8 *contours[3], int low_threshold, int high_threshold);
 //std::unique_ptr<char[]> pack_template(const Koyo_Contour_Template_Runtime_Param &koyo_contour_template_runtime_param);
 //int unpack_template(const Koyo_Contour_Template_Runtime_Param &koyo_contour_template_runtime_param, std::unique_ptr<char[]> template_data);
 //int unpack_template(const Koyo_Contour_Template_Runtime_Param &koyo_contour_template_runtime_param, char* template_data);
