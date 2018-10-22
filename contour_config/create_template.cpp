@@ -811,8 +811,8 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 
     UINT8 sensitity_threshold_low, sensitity_threshold_high;
 
-	sensitity_threshold_low = 10;
-	sensitity_threshold_high = 80;
+	sensitity_threshold_low = koyo_tool_contour_parameter->sensitivity_Low_Threshold;
+	sensitity_threshold_high = koyo_tool_contour_parameter->sensitivity_Low_Threshold*3;
 #if 0
     if (koyo_tool_contour_parameter->sensitivity == CONTOUR_ACCURACY_LOW) {
         sensitity_threshold_low = CANNY_ACCLOW_THRLOW;
@@ -871,7 +871,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 //        saveMat(pyr, (std::string("data//") + std::to_string(pyr.rows) + std::to_string(pyr.cols)).c_str());
 #endif
         cv::Mat cannyResult;
-        cv::Canny(pyr, cannyResult, sensitity_threshold_high, sensitity_threshold_low);
+        cv::Canny(pyr, cannyResult, sensitity_threshold_low, sensitity_threshold_high);
         //cv::imshow("hahahaha", cannyResult);
         //cv::waitKey(0);
         std::cout << "2 rows: " << pyr.rows << " cols: " << pyr.cols << std::endl;
