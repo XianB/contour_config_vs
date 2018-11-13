@@ -813,6 +813,7 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
 
 	sensitity_threshold_low = koyo_tool_contour_parameter->sensitivity_Low_Threshold;
 	sensitity_threshold_high = koyo_tool_contour_parameter->sensitivity_Low_Threshold*3;
+	printf("the koyo_tool_contour_parameter->sensitivity_Low_Threshold is %d, the koyo_tool_contour_parameter->sensitivity_Low_Threshold*3 is %d", sensitity_threshold_low, sensitity_threshold_high);
 #if 0
     if (koyo_tool_contour_parameter->sensitivity == CONTOUR_ACCURACY_LOW) {
         sensitity_threshold_low = CANNY_ACCLOW_THRLOW;
@@ -892,6 +893,11 @@ static int do_create_template(const cv::Mat &src, const cv::Mat &bitMap, Koyo_To
         if (optimal_pyr_level >= MAX_NUM_PYRAMID || (num_of_contour < MIN_CONTOUR_PYRA && optimal_pyr_level >= MIN_NUM_PYRAMID)) {
             break;
         }
+
+		// 当策略为高精度时，保证模板层数为3层，提高匹配精度
+		if (koyo_tool_contour_parameter->algo_strategy == 0 && optimal_pyr_level == 3) {
+			break;
+		}
         ++optimal_pyr_level;
     }
     std::cout << "optimal level: " <<  optimal_pyr_level << std::endl;
